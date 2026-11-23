@@ -1,5 +1,8 @@
 # ClipBoardManager-CBM
 
+**[Download ClipBoardManager-CBM-0.8.2.zip](https://github.com/dwjoseph/ClipBoardManager-CBM/releases/download/v0.8.2/ClipBoardManager-CBM-0.8.2.zip)** -
+extract it, then double-click `Start-ClipBoardManager.vbs`.
+
 A clipboard history window for Windows, in one PowerShell file. Everything you copy
 is listed; filter it, star it, colour it, group it, and send it to a file, Notepad,
 your browser or an AI provider.
@@ -14,7 +17,8 @@ No install, no extra modules, and nothing saved to disk unless you ask for it.
 
 ## Get started
 
-1. Download `ClipBoardManager-CBM-0.8.2.zip` from the [Releases](../../releases) page.
+1. Download `ClipBoardManager-CBM-0.8.2.zip` with the link at the top of this page.
+   It is also in the file list above and on the [Releases](../../releases) page.
 2. Extract it, and keep the files together in one folder.
 3. Double-click **`Start-ClipBoardManager.vbs`**.
 
