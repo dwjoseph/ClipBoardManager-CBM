@@ -1,6 +1,6 @@
 # ClipBoardManager-CBM
 
-**[Download ClipBoardManager-CBM-0.8.2.zip](https://github.com/dwjoseph/ClipBoardManager-CBM/releases/download/v0.8.2/ClipBoardManager-CBM-0.8.2.zip)** -
+**[Download ClipBoardManager-CBM-0.8.3.zip](https://github.com/dwjoseph/ClipBoardManager-CBM/releases/download/v0.8.3/ClipBoardManager-CBM-0.8.3.zip)** -
 extract it, then double-click `Start-ClipBoardManager.vbs`.
 
 A clipboard history window for Windows, in one PowerShell file. Everything you copy
@@ -17,7 +17,7 @@ No install, no extra modules, and nothing saved to disk unless you ask for it.
 
 ## Get started
 
-1. Download `ClipBoardManager-CBM-0.8.2.zip` with the link at the top of this page.
+1. Download `ClipBoardManager-CBM-0.8.3.zip` with the link at the top of this page.
    It is also in the file list above and on the [Releases](../../releases) page.
 2. Extract it, and keep the files together in one folder.
 3. Double-click **`Start-ClipBoardManager.vbs`**.
@@ -34,7 +34,7 @@ To start it when you sign in, put a shortcut to the `.vbs` file in `shell:startu
 The launcher is a convenience. You can also run the script directly from a command line:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\ClipBoardManager-CBM-0.8.2.ps1
+powershell -ExecutionPolicy Bypass -File .\ClipBoardManager-CBM-0.8.3.ps1
 ```
 
 The window opens in the light theme. Change it at any time under Tools > Theme
@@ -53,9 +53,10 @@ Properties, tick Unblock, and extract it again.
 | **History** | Captures every text copy, numbered, with an optional time stamp. Pause when you do not want capture. |
 | **Filter** | Type in the filter box to narrow the list as you type. |
 | **Favorites** | Click the star in front of a row. Show only favorites with one click. |
+| **Quick actions** | Point at a row for Copy, Favorite and Remove icons that act on that one row. |
 | **Colours and topics** | Tag rows red, green, yellow or blue. Insert Topic rows as headings. |
 | **Edit** | F2 opens a multi-line editor for the selected item. |
-| **Long items** | Long text collapses to one line. Right / Left arrows expand and collapse. |
+| **Long items** | Long text collapses to one line with its length in a small badge. Right / Left arrows expand and collapse. |
 | **Groups** | Consolidate several items into one collapsible group. Ungroup brings them back. |
 | **Reorder** | Drag a single selected item to a new position. |
 | **Send it somewhere** | Save or append to a file, add to a Review Log, open in Notepad, Edge, Google, or as URLs. |
@@ -64,6 +65,10 @@ Properties, tick Unblock, and extract it again.
 | **AI (optional)** | Ask AI about selected items, and dictate a Voice Note. |
 
 ![Dark theme](images/02-main-dark.png)
+
+The pictures on this page were taken with 0.8.2. In 0.8.3 the alternating rows are
+easier to tell apart, lengths show as a badge, and the row under the pointer shows
+the quick-action icons.
 
 ### Favorites
 

@@ -12,11 +12,11 @@
             double-click Start-ClipBoardManager.vbs (keep it beside this .ps1)
 
         From a command line:
-            powershell -ExecutionPolicy Bypass -File <path>\ClipBoardManager-CBM-0.8.2.ps1
+            powershell -ExecutionPolicy Bypass -File <path>\ClipBoardManager-CBM-0.8.3.ps1
 
         The window opens in the light theme. Tools > Theme changes it while it runs.
         To start in another theme (Dark, or Auto to follow the Windows setting):
-            powershell -ExecutionPolicy Bypass -File <path>\ClipBoardManager-CBM-0.8.2.ps1 -Theme Dark
+            powershell -ExecutionPolicy Bypass -File <path>\ClipBoardManager-CBM-0.8.3.ps1 -Theme Dark
 
         -noexit is no longer needed. The script now waits on the GUI runspace itself
         rather than relying on a console window to keep the process alive.
@@ -186,6 +186,19 @@
                             contrast still wins over light.
                             How: every brush is bound to a colour holder named after it
                             plus "Source", and Set-UiTheme changes the holders.
+        0.8.3            Rows are easier to tell apart: the stripe on every other row
+                            is about twice as strong in both themes, and the row under
+                            the pointer is darker again so it still stands out.
+                            The note at the right of a row is a small rounded badge:
+                            "348" for a long item (its length; the tooltip says
+                            "348 characters"), "3 items" for a group, "masked". A time
+                            stamp follows the badge as plain text, as before.
+                            The row under the pointer shows three icons at its right
+                            end: Copy, Favorite and Remove. Each acts on that one row
+                            and leaves the selection alone. Copy turns into a check
+                            mark for a moment. They sit on top of the row's end, so
+                            nothing in the row moves when they appear. The right-click
+                            menu and the keyboard shortcuts are unchanged.
 
     Known gaps
         - Masking is unverified end to end. Suspect the ListBox does not select on
@@ -289,11 +302,14 @@ $Runspacehash.Handle = $Runspacehash.PowerShell.AddScript({
     #   IsFavorite - the row is starred (0.8.1). Memory only, like Color.
     #   Body, Glyph, Meta, NumberText, TagFill, TagMark - what the columns bind to,
     #                worked out from the properties above
+    #   Badge, BadgeTip, Stamp - (0.8.3) the note at the right of a row in two parts:
+    #                the badge ("348" for "348 chars", "3 items", "masked") with its
+    #                tooltip, and the short time stamp. Meta is still both as one string.
     #   Display    - "<number> <text><time stamp>" as one string, for anything that
     #                still wants the old formatted row. Nothing parses it any more.
     # The class name carries the version so a console session that already ran an older
     # copy of this script cannot hand this one an out-of-date ClipItem.
-    if (-not ('Cbm082.ClipItem' -as [type])) {
+    if (-not ('Cbm083.ClipItem' -as [type])) {
         Add-Type -TypeDefinition @'
 using System;
 using System.Collections;
@@ -302,7 +318,7 @@ using System.ComponentModel;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 
-namespace Cbm082
+namespace Cbm083
 {
     public class ClipItem : INotifyPropertyChanged
     {
@@ -382,7 +398,7 @@ namespace Cbm082
         // ---- time stamp ----
         public string Suffix {
             get { return _suffix; }
-            set { _suffix = value ?? ""; OnChanged("Suffix"); OnChanged("Meta"); OnChanged("MetaTip"); OnChanged("Display"); }
+            set { _suffix = value ?? ""; OnChanged("Suffix"); OnChanged("Meta"); OnChanged("MetaTip"); OnChanged("Stamp"); OnChanged("Display"); }
         }
 
         private string FullStamp { get { return _suffix.Trim().TrimStart(':').Trim(); } }
@@ -412,7 +428,7 @@ namespace Cbm082
         // ---- row type, set by Update-ClipPreview ----
         public string Detail {
             get { return _detail; }
-            set { _detail = value ?? ""; OnChanged("Detail"); OnChanged("Meta"); }
+            set { _detail = value ?? ""; OnChanged("Detail"); OnChanged("Meta"); OnChanged("Badge"); OnChanged("BadgeTip"); }
         }
 
         public string Caption {
@@ -470,6 +486,14 @@ namespace Cbm082
         }
 
         public string MetaTip { get { return _suffix.Length == 0 ? null : FullStamp; } }
+
+        // 0.8.3 - the note is drawn as a badge and the time stamp as plain text after
+        // it. A length loses its " chars" inside the badge ("348") and gets it back,
+        // spelled out, as the badge tooltip.
+        private bool IsLength { get { return _detail.EndsWith(" chars", StringComparison.Ordinal); } }
+        public string Badge { get { return IsLength ? _detail.Substring(0, _detail.Length - 6) : _detail; } }
+        public string BadgeTip { get { return IsLength ? _detail.Substring(0, _detail.Length - 6) + " characters" : null; } }
+        public string Stamp { get { return ShortStamp; } }
 
         // tooltip for a row that is cut short; capped so a huge clip stays a tooltip
         public string Tip {
@@ -1012,7 +1036,7 @@ public class CbmRecorder
     #   -Suffix    the time stamp text, " : dddd MM/dd/yyyy HH:mm:ss", or nothing
     Function New-ClipItem {
         param([string]$Text, [bool]$Numbered = $false, [string]$Suffix = "", [string]$Color = "")
-        $i = New-Object Cbm082.ClipItem
+        $i = New-Object Cbm083.ClipItem
         $i.Text = $Text
         $i.Captured = Get-Date
         $i.Numbered = $Numbered
@@ -1326,6 +1350,28 @@ Function Set-ClipBoardooo { # 9/22
     [Windows.Clipboard]::SetText("ooo " + $copied.Trim())
 }
 
+# 11/24/26 (0.8.3) - Copy for one row: the copy icon that shows on the row under the
+# pointer. The same as Set-ClipBoard for a selection of just that row, but the selection
+# is not touched. Returns $true when the text reached the clipboard.
+Function Set-ClipBoardItem {
+        param($Item)
+        if ($null -eq $Item) { return $false }
+        $contentToClipboard = ([string]$Item.Text).Trim()
+        if ($contentToClipboard.Length -eq 0) { return $false }
+        try {
+            if ($global:bron -eq "bron") {
+                [Windows.Clipboard]::SetText($contentToClipboard + "<br>")
+            } else {
+                [Windows.Clipboard]::SetText($contentToClipboard)
+            }
+        } catch {
+            return $false    # another program is holding the clipboard open
+        }
+        # the polling timer must not capture it again as a new item
+        $Script:CopiedText = $contentToClipboard
+        return $true
+}
+
 Function Clear-Viewer {
         [void]$Script:ObservableCollection.Clear()
         [Windows.Clipboard]::Clear()
@@ -1494,7 +1540,15 @@ Function Clear-Viewer {
     #   Input* / Menu*          filter box / menus and tooltips
     #   MenuEdge / MenuIcon     menu border / menu icons (MenuHotIcon: icon, check mark
     #                           and left bar of the item under the pointer)
-    #   StripeBg                the soft stripe on every other row
+    #   StripeBg                the stripe on every other row (0.8.3: about twice as
+    #                           strong as it was)
+    #   RowHoverBg              (0.8.3) the row under the pointer. HoverBg is now only the
+    #                           star button under the pointer; HoverLine is the outline
+    #                           of the row under the pointer or with keyboard focus
+    #   PillBg / PillText       (0.8.3) the badge at the right of a row. PillBg is
+    #                           see-through (its first two digits are its strength), so
+    #                           it darkens whatever the row is painted with: stripe,
+    #                           tint, pointer or selection colour
     #   StarOn / StarSel        a favorite's star / the same on a selected row
     #   Thumb*                  scroll bar
     #   Ok / Warn               status dot: capturing / paused
@@ -1507,10 +1561,11 @@ Function Clear-Viewer {
             Chrome = '#F6F7F9'; Surface = '#FFFFFF'; Line = '#E3E6EA'
             Text = '#1C2026'; Muted = '#667085'; Disabled = '#A3AAB8'; Accent = '#2563EB'
             SelBg = '#E3ECFF'; SelLine = '#B3CAF9'; SelText = '#1C2026'; SelMuted = '#56627A'; SelNum = '#2563EB'
-            HoverBg = '#EFF1F5'; HoverLine = '#CBD1DB'
+            HoverBg = '#EFF1F5'; HoverLine = '#B4BECD'; RowHoverBg = '#D9E0EA'
             InputBg = '#FFFFFF'; InputLine = '#CFD4DC'
             MenuBg = '#FFFFFF'; MenuLine = '#CDD2DA'; MenuHotBg = '#DFE9FF'; MenuHotText = '#1C2026'; MenuHotMuted = '#56627A'
-            MenuEdge = '#4C82F0'; MenuIcon = '#2563EB'; MenuHotIcon = '#2563EB'; StripeBg = '#F2F4F8'
+            MenuEdge = '#4C82F0'; MenuIcon = '#2563EB'; MenuHotIcon = '#2563EB'; StripeBg = '#E6EAF1'
+            PillBg = '#2B2F3F5C'; PillText = '#3F4A5E'
             Thumb = '#C3C8D1'; ThumbHot = '#99A1AE'; Ok = '#2F9E63'; Warn = '#D98A00'; ShadowOp = '0.30'
             RedFill = '#FDE8E8'; RedMark = '#E5484D'; GreenFill = '#E2F6EA'; GreenMark = '#2F9E63'
             YellowFill = '#FFF5CC'; YellowMark = '#D9A400'; BlueFill = '#E3EEFF'; BlueMark = '#3B82F6'
@@ -1520,10 +1575,11 @@ Function Clear-Viewer {
             Chrome = '#24272C'; Surface = '#1B1D21'; Line = '#33373E'
             Text = '#E7E9EC'; Muted = '#9AA3B2'; Disabled = '#6B7280'; Accent = '#7AA7FF'
             SelBg = '#25365A'; SelLine = '#3E5A97'; SelText = '#F2F4F7'; SelMuted = '#AEB8C8'; SelNum = '#7AA7FF'
-            HoverBg = '#2A2E35'; HoverLine = '#4A505A'
+            HoverBg = '#2A2E35'; HoverLine = '#5A626F'; RowHoverBg = '#343943'
             InputBg = '#17191C'; InputLine = '#3B4048'
             MenuBg = '#2A2D33'; MenuLine = '#3D424A'; MenuHotBg = '#2F426C'; MenuHotText = '#F2F4F7'; MenuHotMuted = '#AEB8C8'
-            MenuEdge = '#5F8FEA'; MenuIcon = '#7AA7FF'; MenuHotIcon = '#9DBEFF'; StripeBg = '#23262C'
+            MenuEdge = '#5F8FEA'; MenuIcon = '#7AA7FF'; MenuHotIcon = '#9DBEFF'; StripeBg = '#292D34'
+            PillBg = '#2BC9D4E8'; PillText = '#C5CCD8'
             Thumb = '#4A4F58'; ThumbHot = '#6A717C'; Ok = '#4CC38A'; Warn = '#F2B33D'; ShadowOp = '0.60'
             RedFill = '#3D2428'; RedMark = '#FF6369'; GreenFill = '#1D3A2B'; GreenMark = '#4CC38A'
             YellowFill = '#3F3614'; YellowMark = '#F2C230'; BlueFill = '#1D304D'; BlueMark = '#6CB0FF'
@@ -1556,8 +1612,8 @@ Function Clear-Viewer {
             $pick = $sys::HighlightColor.ToString()
             $pickText = $sys::HighlightTextColor.ToString()
             if ((0.299 * $window.R + 0.587 * $window.G + 0.114 * $window.B) -lt 128) { $colors = $dark } else { $colors = $light }
-            foreach ($k in 'Chrome','Surface','InputBg','MenuBg','HoverBg','StripeBg','RedFill','GreenFill','YellowFill','BlueFill') { $colors[$k] = $back }
-            foreach ($k in 'Text','Muted','Line','InputLine','MenuLine','MenuEdge','MenuIcon','Thumb','ThumbHot','Ok','Warn','StarOn') { $colors[$k] = $fore }
+            foreach ($k in 'Chrome','Surface','InputBg','MenuBg','HoverBg','RowHoverBg','StripeBg','PillBg','RedFill','GreenFill','YellowFill','BlueFill') { $colors[$k] = $back }
+            foreach ($k in 'Text','Muted','Line','InputLine','MenuLine','MenuEdge','MenuIcon','Thumb','ThumbHot','Ok','Warn','StarOn','PillText') { $colors[$k] = $fore }
             foreach ($k in 'SelBg','SelLine','HoverLine','MenuHotBg') { $colors[$k] = $pick }
             foreach ($k in 'SelText','SelMuted','SelNum','MenuHotText','MenuHotMuted','MenuHotIcon','StarSel') { $colors[$k] = $pickText }
             $colors.Accent = $sys::HotTrackColor.ToString()
@@ -1641,7 +1697,7 @@ Function Clear-Viewer {
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:sys="clr-namespace:System;assembly=mscorlib"
-        x:Name="Window" Title="Clip Board Manager 0.8.2" WindowStartupLocation="CenterScreen"
+        x:Name="Window" Title="Clip Board Manager 0.8.3" WindowStartupLocation="CenterScreen"
         Width="420" Height="540" MinWidth="260" MinHeight="200" ShowInTaskbar="True"
         Background="{DynamicResource Surface}" Foreground="{DynamicResource Text}" FontFamily="Segoe UI" FontSize="13"
         UseLayoutRounding="True" TextOptions.TextFormattingMode="Display">
@@ -1676,6 +1732,9 @@ Function Clear-Viewer {
             <SolidColorBrush x:Key="MenuIconSource" Color="$($Ui.MenuIcon)"/>
             <SolidColorBrush x:Key="MenuHotIconSource" Color="$($Ui.MenuHotIcon)"/>
             <SolidColorBrush x:Key="StripeBgSource" Color="$($Ui.StripeBg)"/>
+            <SolidColorBrush x:Key="RowHoverBgSource" Color="$($Ui.RowHoverBg)"/>
+            <SolidColorBrush x:Key="PillBgSource" Color="$($Ui.PillBg)"/>
+            <SolidColorBrush x:Key="PillTextSource" Color="$($Ui.PillText)"/>
             <SolidColorBrush x:Key="StarOnSource" Color="$($Ui.StarOn)"/>
             <SolidColorBrush x:Key="StarSelSource" Color="$($Ui.StarSel)"/>
             <SolidColorBrush x:Key="ThumbSource" Color="$($Ui.Thumb)"/>
@@ -1711,6 +1770,9 @@ Function Clear-Viewer {
             <SolidColorBrush x:Key="MenuIcon" Color="{Binding Color, Source={StaticResource MenuIconSource}}"/>
             <SolidColorBrush x:Key="MenuHotIcon" Color="{Binding Color, Source={StaticResource MenuHotIconSource}}"/>
             <SolidColorBrush x:Key="StripeBg" Color="{Binding Color, Source={StaticResource StripeBgSource}}"/>
+            <SolidColorBrush x:Key="RowHoverBg" Color="{Binding Color, Source={StaticResource RowHoverBgSource}}"/>
+            <SolidColorBrush x:Key="PillBg" Color="{Binding Color, Source={StaticResource PillBgSource}}"/>
+            <SolidColorBrush x:Key="PillText" Color="{Binding Color, Source={StaticResource PillTextSource}}"/>
             <SolidColorBrush x:Key="StarOn" Color="{Binding Color, Source={StaticResource StarOnSource}}"/>
             <SolidColorBrush x:Key="StarSel" Color="{Binding Color, Source={StaticResource StarSelSource}}"/>
             <SolidColorBrush x:Key="Thumb" Color="{Binding Color, Source={StaticResource ThumbSource}}"/>
@@ -1933,7 +1995,8 @@ Function Clear-Viewer {
                                         <Condition Binding="{Binding IsMouseOver, RelativeSource={RelativeSource Self}}" Value="True"/>
                                         <Condition Binding="{Binding HasColor}" Value="False"/>
                                     </MultiDataTrigger.Conditions>
-                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBg}"/>
+                                    <!-- 0.8.3: was HoverBg, which the stronger stripe had caught up with -->
+                                    <Setter TargetName="Bd" Property="Background" Value="{StaticResource RowHoverBg}"/>
                                 </MultiDataTrigger>
                                 <Trigger Property="IsMouseOver" Value="True">
                                     <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource HoverLine}"/>
@@ -1969,7 +2032,25 @@ Function Clear-Viewer {
                  Everything is top-aligned so the number and icon stay on the first line
                  of a row that runs to several lines. The icon cell carries Tag "toggle"
                  (the expand click looks for it) and the text cell Tag "body" (the
-                 tooltip rule, RowTip, looks for it). -->
+                 tooltip rule, RowTip, looks for it).
+                 0.8.3: the note at the right is a badge (Pill) followed by the time
+                 stamp, and the row under the pointer shows Copy / Favorite / Remove
+                 icons (Acts) on top of its right-hand end. -->
+            <Style x:Key="ActIcon" TargetType="TextBlock">
+                <Setter Property="FontFamily" Value="{StaticResource IconFont}"/>
+                <Setter Property="FontSize" Value="13"/>
+                <Setter Property="Foreground" Value="{StaticResource Text}"/>
+                <Setter Property="Background" Value="Transparent"/>
+                <Setter Property="Opacity" Value="0.7"/>
+                <Setter Property="Padding" Value="6,7,6,6"/>
+                <Setter Property="VerticalAlignment" Value="Top"/>
+                <Setter Property="Cursor" Value="Hand"/>
+                <Style.Triggers>
+                    <Trigger Property="IsMouseOver" Value="True">
+                        <Setter Property="Opacity" Value="1"/>
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
             <DataTemplate x:Key="ClipTemplate">
                 <Grid Margin="0,0,8,0">
                     <Grid.ColumnDefinitions>
@@ -1994,8 +2075,16 @@ Function Clear-Viewer {
                         <TextBlock x:Name="Body" Grid.Column="1" Text="{Binding Body}" Tag="body" TextTrimming="CharacterEllipsis"
                                    VerticalAlignment="Top" Margin="0,5,0,5" ToolTip="{Binding Tip}"
                                    ToolTipService.InitialShowDelay="600" ToolTipService.ShowDuration="30000"/>
-                        <TextBlock x:Name="Meta" Grid.Column="2" Text="{Binding Meta}" FontSize="11.5" Foreground="{StaticResource Muted}"
-                                   VerticalAlignment="Top" Margin="12,6,0,0" ToolTip="{Binding MetaTip}"/>
+                        <!-- 0.8.3: the note ("348", "3 items", "masked") is a small badge; the
+                             time stamp follows it as plain text -->
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Top" Margin="12,0,0,0">
+                            <Border x:Name="Pill" Height="17" CornerRadius="8.5" Padding="7,0,7,1" Margin="0,5,0,0" VerticalAlignment="Top"
+                                    Background="{StaticResource PillBg}" ToolTip="{Binding BadgeTip}" SnapsToDevicePixels="True">
+                                <TextBlock Text="{Binding Badge}" FontSize="11" Foreground="{StaticResource PillText}" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock x:Name="Meta" Text="{Binding Stamp}" FontSize="11.5" Foreground="{StaticResource Muted}"
+                                       VerticalAlignment="Top" Margin="8,6,0,0" ToolTip="{Binding MetaTip}"/>
+                        </StackPanel>
                     </Grid>
                     <!-- an Insert Topic row: just the title and a rule -->
                     <DockPanel x:Name="Topic" Grid.Column="3" Visibility="Collapsed" Margin="1,0,0,0">
@@ -2003,24 +2092,55 @@ Function Clear-Viewer {
                                    Foreground="{StaticResource Accent}" TextTrimming="CharacterEllipsis" VerticalAlignment="Top" Margin="0,6,0,5"/>
                         <Border Height="1" Margin="10,2,0,0" VerticalAlignment="Center" Background="{StaticResource Line}"/>
                     </DockPanel>
+                    <!-- 0.8.3: Copy / Favorite / Remove for this one row. Shown only while
+                         the pointer is on the row, on top of the row's right-hand end, so
+                         nothing in the row moves. It is painted with whatever the row is
+                         painted with (stripe, tint, pointer or selection colour) and fades
+                         in at its left edge. Each icon carries a Tag starting "act-"; the
+                         click handler looks for it. -->
+                    <Border x:Name="Acts" Grid.Column="3" HorizontalAlignment="Right" VerticalAlignment="Top"
+                            Margin="0,0,-5,0" Padding="18,0,0,0" Visibility="Collapsed"
+                            Background="{Binding Background, RelativeSource={RelativeSource AncestorType={x:Type Border}}}">
+                        <Border.OpacityMask>
+                            <LinearGradientBrush MappingMode="Absolute" StartPoint="0,0" EndPoint="14,0">
+                                <GradientStop Offset="0" Color="#00000000"/>
+                                <GradientStop Offset="1" Color="#FF000000"/>
+                            </LinearGradientBrush>
+                        </Border.OpacityMask>
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock x:Name="ActCopy" Tag="act-copy" Text="&#xE8C8;" Style="{StaticResource ActIcon}" ToolTip="Copy this item"/>
+                            <TextBlock x:Name="ActStar" Tag="act-star" Text="&#xE734;" Style="{StaticResource ActIcon}" ToolTip="Favorite"/>
+                            <TextBlock x:Name="ActRemove" Tag="act-remove" Text="&#xE74D;" Style="{StaticResource ActIcon}" ToolTip="Remove this item"/>
+                        </StackPanel>
+                    </Border>
                 </Grid>
                 <DataTemplate.Triggers>
                     <!-- star: outline under the pointer, solid gold when set, none on a topic -->
                     <DataTrigger Binding="{Binding IsMouseOver, RelativeSource={RelativeSource AncestorType={x:Type ListBoxItem}}}" Value="True">
                         <Setter TargetName="Star" Property="Opacity" Value="0.7"/>
+                        <Setter TargetName="Acts" Property="Visibility" Value="Visible"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding IsFavorite}" Value="True">
                         <Setter TargetName="Star" Property="Text" Value="&#xE735;"/>
                         <Setter TargetName="Star" Property="Foreground" Value="{StaticResource StarOn}"/>
                         <Setter TargetName="Star" Property="Opacity" Value="1"/>
+                        <Setter TargetName="ActStar" Property="Text" Value="&#xE735;"/>
+                        <Setter TargetName="ActStar" Property="Foreground" Value="{StaticResource StarOn}"/>
+                        <Setter TargetName="ActStar" Property="Opacity" Value="1"/>
+                        <Setter TargetName="ActStar" Property="ToolTip" Value="Remove favorite"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding IsTopic}" Value="True">
                         <Setter TargetName="Row" Property="Visibility" Value="Collapsed"/>
                         <Setter TargetName="Topic" Property="Visibility" Value="Visible"/>
                         <Setter TargetName="Star" Property="Visibility" Value="Hidden"/>
+                        <Setter TargetName="ActStar" Property="Visibility" Value="Collapsed"/>
                     </DataTrigger>
-                    <DataTrigger Binding="{Binding Meta}" Value="">
+                    <DataTrigger Binding="{Binding Stamp}" Value="">
                         <Setter TargetName="Meta" Property="Visibility" Value="Collapsed"/>
+                    </DataTrigger>
+                    <DataTrigger Binding="{Binding Badge}" Value="">
+                        <Setter TargetName="Pill" Property="Visibility" Value="Collapsed"/>
+                        <Setter TargetName="Meta" Property="Margin" Value="0,6,0,0"/>
                     </DataTrigger>
                     <DataTrigger Binding="{Binding IsLong}" Value="True">
                         <Setter TargetName="Ico" Property="Cursor" Value="Hand"/>
@@ -2040,6 +2160,9 @@ Function Clear-Viewer {
                         <Setter TargetName="Meta" Property="Foreground" Value="{StaticResource SelMuted}"/>
                         <Setter TargetName="Title" Property="Foreground" Value="{StaticResource SelNum}"/>
                         <Setter TargetName="Star" Property="Foreground" Value="{StaticResource SelMuted}"/>
+                        <Setter TargetName="ActCopy" Property="Foreground" Value="{StaticResource SelText}"/>
+                        <Setter TargetName="ActStar" Property="Foreground" Value="{StaticResource SelText}"/>
+                        <Setter TargetName="ActRemove" Property="Foreground" Value="{StaticResource SelText}"/>
                     </DataTrigger>
                     <MultiDataTrigger>
                         <MultiDataTrigger.Conditions>
@@ -2047,6 +2170,7 @@ Function Clear-Viewer {
                             <Condition Binding="{Binding IsFavorite}" Value="True"/>
                         </MultiDataTrigger.Conditions>
                         <Setter TargetName="Star" Property="Foreground" Value="{StaticResource StarSel}"/>
+                        <Setter TargetName="ActStar" Property="Foreground" Value="{StaticResource StarSel}"/>
                     </MultiDataTrigger>
                 </DataTemplate.Triggers>
             </DataTemplate>
@@ -2483,7 +2607,7 @@ Function Clear-Viewer {
     # 11/23/26 (0.8.2) - a function now, because Set-UiTheme runs it again
     Function Update-TagColors {
         foreach ($colorName in @($Script:ColorPalette.Keys)) {
-            [Cbm082.ClipItem]::TagColors[$Script:ColorPalette[$colorName]] =
+            [Cbm083.ClipItem]::TagColors[$Script:ColorPalette[$colorName]] =
                 [string[]]@($Ui["${colorName}Fill"], $Ui["${colorName}Mark"])
         }
     }
@@ -2500,11 +2624,11 @@ Function Clear-Viewer {
             if ($hwnd -eq [IntPtr]::Zero) { return }
             $on = 0
             if ($Ui.IsDark) { $on = 1 }
-            if ([Cbm082.Native]::DwmSetWindowAttribute($hwnd, 20, [ref]$on, 4) -ne 0) {
-                [void][Cbm082.Native]::DwmSetWindowAttribute($hwnd, 19, [ref]$on, 4)
+            if ([Cbm083.Native]::DwmSetWindowAttribute($hwnd, 20, [ref]$on, 4) -ne 0) {
+                [void][Cbm083.Native]::DwmSetWindowAttribute($hwnd, 19, [ref]$on, 4)
             }
             # 0x37 = leave size, position, order and focus alone; the frame has changed
-            if ($Redraw) { [void][Cbm082.Native]::SetWindowPos($hwnd, [IntPtr]::Zero, 0, 0, 0, 0, 0x37) }
+            if ($Redraw) { [void][Cbm083.Native]::SetWindowPos($hwnd, [IntPtr]::Zero, 0, 0, 0, 0, 0x37) }
         } catch { }
     }
 
@@ -2559,7 +2683,7 @@ Function Clear-Viewer {
     Function Update-RowNumbers {
         param([int]$From = 0)
 
-        $highest = [Cbm082.ClipItem]::Renumber($Script:ObservableCollection, $From)
+        $highest = [Cbm083.ClipItem]::Renumber($Script:ObservableCollection, $From)
 
         $digits = 0
         if ($highest -gt 0) { $digits = ([string]$highest).Length }
@@ -2609,7 +2733,7 @@ Function Clear-Viewer {
             $counts = "$total $noun"
             if ($shown -ne $total) { $counts = "$shown of $total $noun" }
             # 0.8.1 - favorites are counted over the whole list, shown or not
-            $stars = [Cbm082.ClipItem]::CountFavorites($Script:ObservableCollection)
+            $stars = [Cbm083.ClipItem]::CountFavorites($Script:ObservableCollection)
             if ($stars -gt 0) { $counts += "  " + [char]0xB7 + "  $stars " + $(if ($stars -eq 1) { "favorite" } else { "favorites" }) }
             if ($picked -gt 0) { $counts += "  " + [char]0xB7 + "  $picked selected" }
             $CountText.Text = $counts
@@ -2950,6 +3074,29 @@ $remove = $listbox.SelectedItems[0].Text
     # the selection; clicking anywhere else on the row selects as before.
     # 11/22/26 (0.8.1) - the star in front of the number works the same way: a click on
     # it marks or unmarks that row as a favorite and leaves the selection alone.
+    # 11/24/26 (0.8.3) - and so do the three icons at the right of the row under the
+    # pointer (Tag "act-copy", "act-star", "act-remove"): each acts on that one row.
+
+    # The copy icon turns into a check mark for a moment, so the click is seen to have
+    # done something. One timer; a second copy inside that moment puts the first icon
+    # back straight away.
+    $Script:ActDoneIcon = $null
+    $Script:ActDoneTimer = New-Object System.Windows.Threading.DispatcherTimer
+    $Script:ActDoneTimer.Interval = [TimeSpan]::FromMilliseconds(900)
+    $Script:ActDoneTimer.Add_Tick({
+        $Script:ActDoneTimer.Stop()
+        if ($null -ne $Script:ActDoneIcon) { $Script:ActDoneIcon.Text = [string][char]0xE8C8 }
+        $Script:ActDoneIcon = $null
+    })
+    Function Show-CopyDone {
+        param($Icon)
+        $Script:ActDoneTimer.Stop()
+        if ($null -ne $Script:ActDoneIcon) { $Script:ActDoneIcon.Text = [string][char]0xE8C8 }
+        $Script:ActDoneIcon = $Icon
+        $Icon.Text = [string][char]0xE73E
+        $Script:ActDoneTimer.Start()
+    }
+
     $listbox.Add_PreviewMouseLeftButtonDown({
         $src = $_.OriginalSource
         if ($src -is [System.Windows.Controls.TextBlock] -and $src.Tag -eq "toggle" -and $src.DataContext.IsLong) {
@@ -2958,6 +3105,19 @@ $remove = $listbox.SelectedItems[0].Text
         }
         elseif ($src -is [System.Windows.Controls.TextBlock] -and $src.Tag -eq "star" -and $null -ne $src.DataContext) {
             Set-ItemsFavorite -Items @($src.DataContext) -Favorite (-not $src.DataContext.IsFavorite)
+            $_.Handled = $true
+        }
+        elseif ($src -is [System.Windows.Controls.TextBlock] -and $null -ne $src.DataContext -and ([string]$src.Tag).StartsWith("act-")) {
+            $actItem = $src.DataContext
+            if ($src.Tag -eq "act-copy") {
+                if (Set-ClipBoardItem -Item $actItem) { Show-CopyDone -Icon $src }
+            }
+            elseif ($src.Tag -eq "act-star") {
+                Set-ItemsFavorite -Items @($actItem) -Favorite (-not $actItem.IsFavorite)
+            }
+            elseif ($src.Tag -eq "act-remove") {
+                [void]$Script:ObservableCollection.Remove($actItem)
+            }
             $_.Handled = $true
         }
     })
@@ -4139,7 +4299,7 @@ $OptionsWindow.ShowDialog() | Out-Null
     # shows everything does not. "Cut short" means a collapsed long item or group, or a
     # line that runs past the window edge. The rule is RowTip, in the C# block near the
     # top of this script, where the reason it cannot be an ordinary handler is given.
-    [Cbm082.RowTip]::Hook()
+    [Cbm083.RowTip]::Hook()
 
     $listbox.Add_MouseRightButtonUp({
         If ($Script:ObservableCollection.Count -gt 0) {
